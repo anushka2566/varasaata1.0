@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { LegalPage, Placeholder } from "@/components/LegalPage";
+import { LegalPage } from "@/components/LegalPage";
 import { TERMS_VERSION } from "@/lib/policies";
 
 export const Route = createFileRoute("/terms")({
@@ -21,9 +21,8 @@ function Terms() {
   return (
     <LegalPage title="Terms & Conditions" version={TERMS_VERSION}>
       <p>
-        These terms apply to your use of VARASAATA (వరసాట), provided by{" "}
-        <Placeholder>Developer name</Placeholder>. By creating an account and accepting these terms,
-        you agree to them.
+        These terms apply to your use of VARASAATA (వరసాట), provided by Bonam Maruthi Anushka. By
+        creating an account and accepting these terms, you agree to them.
       </p>
 
       <h2>1. The game</h2>
@@ -62,8 +61,8 @@ function Terms() {
       <h2>6. Intellectual property</h2>
       <p>
         The traditional game itself is part of shared cultural heritage. The VARASAATA name, logo,
-        artwork and software are owned by <Placeholder>Developer name</Placeholder>. You may use the
-        app for personal, non-commercial play; you may not copy, resell or redistribute it.
+        artwork and software are owned by Bonam Maruthi Anushka. You may use the app for personal,
+        non-commercial play; you may not copy, resell or redistribute it.
       </p>
 
       <h2>7. Suspension and deletion</h2>
@@ -87,8 +86,11 @@ function Terms() {
 
       <h2>10. Contact</h2>
       <p>
-        Email: <Placeholder>support email address</Placeholder>. Governing law:{" "}
-        <Placeholder>jurisdiction</Placeholder>.
+        Developer: Bonam Maruthi Anushka
+        <br />
+        Email: <a className="text-primary underline" href="mailto:maruthianushkabonam@gmail.com">
+          maruthianushkabonam@gmail.com
+        </a>
       </p>
     </LegalPage>
   );
