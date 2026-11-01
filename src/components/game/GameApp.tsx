@@ -25,6 +25,7 @@ import {
   Swords,
   Globe,
   Sparkles,
+  Menu,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -45,6 +46,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Logo, Title, LegalLinks } from "@/components/brand";
+import { AppSidebar, type SidebarTab } from "@/components/layout/AppSidebar";
 import { Board, STONE_COLORS, stoneBg } from "./Board";
 import {
   capture,
@@ -123,6 +125,7 @@ export function GameApp({ userId }: { userId: string }) {
 
   // Navigation state
   const [activeTab, setActiveTab] = useState<ActiveTab>("play");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Core App & Match Settings
   const [settings, setSettings] = useState<AppSettings>({
@@ -144,6 +147,10 @@ export function GameApp({ userId }: { userId: string }) {
 
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const [bannerUserHidden, setBannerUserHidden] = useState(false);
+  const bannerVisible = !playing && !bannerUserHidden;
+  const contentBottomPadding = bannerVisible ? "pb-40" : "pb-32";
+  const lastRoomJoinKeyRef = useRef<string | null>(null);
 
   // Statistics & History
   const [stats, setStats] = useState({
@@ -224,12 +231,20 @@ export function GameApp({ userId }: { userId: string }) {
     void initAds();
   }, []);
   useEffect(() => {
-    if (playing) void hideBanner();
-    else void showBanner();
-  }, [playing]);
+    if (playing) {
+      void hideBanner();
+      return;
+    }
+    if (bannerVisible) void showBanner();
+    else void hideBanner();
+  }, [playing, bannerVisible]);
   // Register Android hardware back button handler
   useEffect(() => {
     const unregister = registerBackHandler(() => {
+      if (mobileNavOpen) {
+        setMobileNavOpen(false);
+        return true;
+      }
       // 1. If any dialog is open, dismiss it
       if (dialog !== null) {
         setDialog(null);
@@ -253,7 +268,7 @@ export function GameApp({ userId }: { userId: string }) {
       return false;
     });
     return unregister;
-  }, [dialog, playing, matchOver, activeTab, matchOver]);
+  }, [dialog, playing, matchOver, activeTab, mobileNavOpen]);
 
 
   const paused = dialog !== null;
@@ -402,26 +417,38 @@ export function GameApp({ userId }: { userId: string }) {
   useEffect(() => {
     if (!currentRoom?.code || settings.mode !== "online") return;
 
-    const unsub = subscribeToRoom(currentRoom.code, {
+    const roomCode = currentRoom.code;
+    const unsub = subscribeToRoom(roomCode, {
       onMove: (remoteGameState) => {
-        setGame(remoteGameState);
+        setGame((prev) => (prev === remoteGameState ? prev : remoteGameState));
         sfx("place");
       },
       onRoomUpdated: (updatedRoom) => {
-        setCurrentRoom(updatedRoom);
-        if (updatedRoom.guestName && !playing) {
-          toast.success(`${updatedRoom.guestName} joined the room!`);
-          sfx("win");
-          setSettings((s) => ({
-            ...s,
-            names: [s.names[0], updatedRoom.guestName || "Guest"],
-            avatars: [s.avatars[0], updatedRoom.guestAvatar || "🐅"],
-          }));
-        }
+        setCurrentRoom((prev) => {
+          if (!updatedRoom.guestName) return prev ?? updatedRoom;
+          const joinKey = `${roomCode}:${updatedRoom.guestId ?? updatedRoom.guestName}`;
+          if (lastRoomJoinKeyRef.current === joinKey) {
+            return prev ?? updatedRoom;
+          }
+          lastRoomJoinKeyRef.current = joinKey;
+          if (!playing) {
+            toast.success(`${updatedRoom.guestName} joined the room!`);
+            sfx("win");
+            setSettings((s) => ({
+              ...s,
+              names: [s.names[0], updatedRoom.guestName || "Guest"],
+              avatars: [s.avatars[0], updatedRoom.guestAvatar || "🐅"],
+            }));
+          }
+          return updatedRoom;
+        });
       },
     });
 
-    return unsub;
+    return () => {
+      unsub();
+      lastRoomJoinKeyRef.current = null;
+    };
   }, [currentRoom?.code, settings.mode, playing, sfx]);
 
   const savePrefs = async (s: AppSettings) => {
@@ -850,6 +877,15 @@ export function GameApp({ userId }: { userId: string }) {
       }}
     >
       <div className="flex items-center gap-2.5">
+        <button
+          type="button"
+          aria-label="Open menu"
+          onClick={() => setMobileNavOpen(true)}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full text-amber-200 hover:bg-amber-500/10 md:hidden"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+
         {playing ? (
           <Button
             variant="ghost"
@@ -932,102 +968,20 @@ export function GameApp({ userId }: { userId: string }) {
     </header>
   );
 
-  // Native Fixed Bottom Navigation Bar (Home/Play, Lobby, Friends, Stats, Profile)
-  const navTabs = (
-    <nav
-      className="fixed bottom-0 inset-x-0 z-40 bg-[#140e0a]/95 border-t border-amber-900/35 backdrop-blur-xl shadow-[0_-8px_25px_rgba(0,0,0,0.65)]"
-      style={{
-        paddingBottom: "max(0.5rem, env(safe-area-inset-bottom, 0px))",
-      }}
-    >
-      <div className="mx-auto flex max-w-lg items-center justify-around px-2 py-1">
-        <button
-          type="button"
-          onClick={() => {
-            void triggerHaptic("selection");
-            sfx("click");
-            setActiveTab("play");
-          }}
-          className={`flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl text-[11px] font-semibold transition-all active:scale-95 ${
-            activeTab === "play"
-              ? "text-amber-300 bg-amber-500/15 ring-1 ring-amber-500/30 shadow-sm"
-              : "text-stone-400 hover:text-stone-200"
-          }`}
-        >
-          <Gamepad2 className={`h-5 w-5 mb-0.5 ${activeTab === "play" ? "text-amber-400" : ""}`} />
-          <span>{t.playGame}</span>
-        </button>
+  const sidebarItems: Array<{ key: SidebarTab; icon: typeof Gamepad2; label: string }> = [
+    { key: "play", icon: Gamepad2, label: t.playGame },
+    { key: "online", icon: Globe, label: t.onlineMultiplayer },
+    { key: "friends", icon: Users, label: t.friends },
+    { key: "dashboard", icon: Trophy, label: t.dashboard },
+    { key: "settings", icon: SettingsIcon, label: t.settings },
+  ];
 
-        <button
-          type="button"
-          onClick={() => {
-            void triggerHaptic("selection");
-            sfx("click");
-            setActiveTab("online");
-          }}
-          className={`flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl text-[11px] font-semibold transition-all active:scale-95 ${
-            activeTab === "online"
-              ? "text-amber-300 bg-amber-500/15 ring-1 ring-amber-500/30 shadow-sm"
-              : "text-stone-400 hover:text-stone-200"
-          }`}
-        >
-          <Globe className={`h-5 w-5 mb-0.5 ${activeTab === "online" ? "text-amber-400" : ""}`} />
-          <span>{t.onlineMultiplayer}</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            void triggerHaptic("selection");
-            sfx("click");
-            setActiveTab("friends");
-          }}
-          className={`flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl text-[11px] font-semibold transition-all active:scale-95 ${
-            activeTab === "friends"
-              ? "text-amber-300 bg-amber-500/15 ring-1 ring-amber-500/30 shadow-sm"
-              : "text-stone-400 hover:text-stone-200"
-          }`}
-        >
-          <Users className={`h-5 w-5 mb-0.5 ${activeTab === "friends" ? "text-amber-400" : ""}`} />
-          <span>{t.friends}</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            void triggerHaptic("selection");
-            sfx("click");
-            setActiveTab("dashboard");
-          }}
-          className={`flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl text-[11px] font-semibold transition-all active:scale-95 ${
-            activeTab === "dashboard"
-              ? "text-amber-300 bg-amber-500/15 ring-1 ring-amber-500/30 shadow-sm"
-              : "text-stone-400 hover:text-stone-200"
-          }`}
-        >
-          <Trophy className={`h-5 w-5 mb-0.5 ${activeTab === "dashboard" ? "text-amber-400" : ""}`} />
-          <span>{t.dashboard}</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            void triggerHaptic("selection");
-            sfx("click");
-            setActiveTab("settings");
-          }}
-          className={`flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl text-[11px] font-semibold transition-all active:scale-95 ${
-            activeTab === "settings"
-              ? "text-amber-300 bg-amber-500/15 ring-1 ring-amber-500/30 shadow-sm"
-              : "text-stone-400 hover:text-stone-200"
-          }`}
-        >
-          <SettingsIcon className={`h-5 w-5 mb-0.5 ${activeTab === "settings" ? "text-amber-400" : ""}`} />
-          <span>{t.settings}</span>
-        </button>
-      </div>
-    </nav>
-  );
+  const handleSidebarSelect = (tab: SidebarTab) => {
+    void triggerHaptic("selection");
+    sfx("click");
+    setActiveTab(tab as ActiveTab);
+    setMobileNavOpen(false);
+  };
 
   // Dialogs
   const dialogs = (
@@ -1121,7 +1075,7 @@ export function GameApp({ userId }: { userId: string }) {
         className={`theme-${settings.boardTheme} flex min-h-screen flex-col items-center select-none`}
       >
         {header}
-        <main className="flex w-full max-w-5xl flex-col items-center gap-4 px-3 py-4 pb-12 lg:flex-row lg:items-start lg:justify-center">
+        <main className={`flex w-full max-w-5xl flex-col items-center gap-4 px-3 py-4 ${contentBottomPadding} lg:flex-row lg:items-start lg:justify-center lg:pb-20`}>
           {/* Game Status & Controls Panel */}
           <div className="flex w-full max-w-md flex-col gap-3 lg:order-2">
             <div className="panel p-4 text-center shadow-lg">
@@ -1322,8 +1276,30 @@ export function GameApp({ userId }: { userId: string }) {
       className={`theme-${settings.boardTheme} flex min-h-[100dvh] flex-col items-center bg-gradient-to-b from-[#18110c] to-[#0c0806]`}
     >
       {header}
+      {bannerVisible && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] z-50 flex justify-end pr-2">
+          <button
+            type="button"
+            aria-label="Hide banner advertisement"
+            onClick={async () => {
+              setBannerUserHidden(true);
+              await hideBanner();
+            }}
+            className="pointer-events-auto flex h-6 w-6 items-center justify-center rounded-full border border-amber-300/50 bg-[#1d130d]/90 text-lg leading-none text-amber-100 shadow-lg transition hover:bg-[#2b1a12]"
+          >
+            ×
+          </button>
+        </div>
+      )}
+      <AppSidebar
+        activeTab={activeTab as SidebarTab}
+        items={sidebarItems}
+        onSelect={handleSidebarSelect}
+        mobileOpen={mobileNavOpen}
+        onMobileClose={() => setMobileNavOpen(false)}
+      />
 
-      <main className="w-full max-w-3xl space-y-6 px-4 pt-4 pb-28">
+      <main className={`w-full max-w-3xl space-y-6 px-4 pt-4 md:pl-[17rem] ${contentBottomPadding}`}>
 
         {/* TAB 1: PLAY SETUP */}
         {activeTab === "play" && (
@@ -1374,10 +1350,12 @@ export function GameApp({ userId }: { userId: string }) {
                         names: [s.names[0], "Computer"],
                       }));
                     }}
-                    className="h-11 font-medium"
+                    className="w-full min-w-0 h-auto min-h-[64px] px-2 py-2.5 text-[11px] font-medium leading-tight sm:text-sm"
                   >
-                    <Gamepad2 className="mr-2 h-4 w-4" />
-                    {t.vsAi}
+                    <span className="flex min-w-0 flex-col items-center justify-center gap-1.5 text-center">
+                      <Gamepad2 className="h-4 w-4 shrink-0" />
+                      <span className="block max-w-full break-words leading-tight">{t.vsAi}</span>
+                    </span>
                   </Button>
                   <Button
                     type="button"
@@ -1390,10 +1368,12 @@ export function GameApp({ userId }: { userId: string }) {
                         names: [s.names[0], "Player 2"],
                       }));
                     }}
-                    className="h-11 font-medium"
+                    className="w-full min-w-0 h-auto min-h-[64px] px-2 py-2.5 text-[11px] font-medium leading-tight sm:text-sm"
                   >
-                    <Users className="mr-2 h-4 w-4" />
-                    {t.passAndPlay}
+                    <span className="flex min-w-0 flex-col items-center justify-center gap-1.5 text-center">
+                      <Users className="h-4 w-4 shrink-0" />
+                      <span className="block max-w-full break-words leading-tight">{t.passAndPlay}</span>
+                    </span>
                   </Button>
                 </div>
               </div>
@@ -2243,8 +2223,7 @@ export function GameApp({ userId }: { userId: string }) {
 
         <LegalLinks />
       </main>
-      {navTabs}
-      {dialogs}
+        {dialogs}
     </div>
   );
 }
