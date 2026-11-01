@@ -26,6 +26,7 @@ import {
   Globe,
   Sparkles,
   Menu,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -92,7 +93,15 @@ export const AVATARS = ["🦚", "🐘", "🐅", "🪷", "🦁", "🦅", "🐎", 
 
 export type BoardTheme = "wood" | "midnight" | "jade" | "ivory";
 type ActiveTab = "play" | "dashboard" | "online" | "friends" | "settings" | "rules";
-type Dlg = null | "back" | "restart" | "newmatch" | "logout" | "rules" | "win_celebration";
+type Dlg =
+  | null
+  | "back"
+  | "restart"
+  | "newmatch"
+  | "logout"
+  | "delete_account"
+  | "rules"
+  | "win_celebration";
 
 interface MatchHistoryItem {
   id: string;
@@ -701,6 +710,57 @@ export function GameApp({ userId }: { userId: string }) {
     navigate({ to: "/signin" });
   };
 
+  const clearUserSpecificLocalData = (currentUserId: string) => {
+    if (typeof window === "undefined") return;
+
+    const allKeys = Array.from({ length: window.localStorage.length }, (_, index) =>
+      window.localStorage.key(index),
+    ).filter((key): key is string => key !== null);
+
+    for (const key of allKeys) {
+      if (
+        key === "varasaata_rooms_v1" ||
+        key.startsWith(`varasaata_consent_${currentUserId}_`) ||
+        key.startsWith(`varasaata_profile_${currentUserId}_`)
+      ) {
+        window.localStorage.removeItem(key);
+      }
+    }
+
+    try {
+      window.sessionStorage.clear();
+    } catch {
+      // Ignore storage access errors.
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setDialog(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("delete-account", {
+        body: { reason: "user_requested" },
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data?.success) {
+        throw new Error(data?.error || "Account deletion failed.");
+      }
+
+      clearUserSpecificLocalData(userId);
+      await supabase.auth.signOut();
+      navigate({ to: "/signin" });
+      toast.success("Your account was deleted successfully.");
+    } catch (err: unknown) {
+      console.error("Account deletion failed:", err);
+      toast.error(
+        err instanceof Error ? err.message : "We could not delete your account. Please try again.",
+      );
+    }
+  };
+
   // Password update handler
   const handlePasswordUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1061,6 +1121,36 @@ export function GameApp({ userId }: { userId: string }) {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={logout}>{t.signOut}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={dialog === "delete_account"}
+        onOpenChange={(o) => !o && setDialog(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete your VARASAATA account?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span>
+                This action is permanent. Your profile, game statistics, consent records, and
+                multiplayer-related data associated with your account will be removed.
+              </span>
+              <span>
+                You will be signed out immediately after the deletion request is processed and your
+                account cannot be recovered.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteAccount}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete Account
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -2154,6 +2244,24 @@ export function GameApp({ userId }: { userId: string }) {
                   {passwordState.updating ? "Updating..." : t.updatePassword}
                 </Button>
               </form>
+
+              <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 space-y-3">
+                <div className="flex items-center gap-2 text-destructive">
+                  <Trash2 className="h-4 w-4" />
+                  <h3 className="font-semibold text-sm">Delete Account</h3>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Permanently delete your VARASAATA account and associated personal data.
+                </p>
+                <Button
+                  variant="destructive"
+                  onClick={() => setDialog("delete_account")}
+                  className="w-full"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Account
+                </Button>
+              </div>
 
               {/* Save Preferences Button */}
               <Button size="lg" onClick={() => savePrefs(settings)} className="w-full font-bold">
